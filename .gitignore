@@ -1,0 +1,6 @@
+/.ruby-gemset
+/.ruby-version
+/.env
+/log/*.log
+/output/*.csv
+/output/*.json
