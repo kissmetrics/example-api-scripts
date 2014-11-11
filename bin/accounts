@@ -1,0 +1,149 @@
+#!/usr/bin/env ruby
+
+require 'dotenv'
+Dotenv.load
+
+require File.expand_path('../../lib/kissmetrics', __FILE__)
+require 'multi_json'
+require 'terminal-table'
+require 'logger'
+require 'optparse'
+require 'ruby-progressbar'
+
+# CLI Options Parser
+core_options = {
+  :personal_api_token => ENV.fetch('PERSONAL_API_TOKEN'),
+  :limit              => 20,
+  :offset             => 0,
+  :paginate           => false
+}
+
+# Progress Bar Options
+progress_bar_options = {
+  :format         => '%a %bᗧ%i %p%% %t',
+  :progress_mark  => ' ',
+  :remainder_mark => '･',
+  :starting_at    => 0
+}
+
+options = {}
+OptionParser.new do |opts|
+  opts.banner = 'Usage: bundle exec bin/accounts [options]'
+
+  opts.on('-t', '--token [TOKEN]', 'Retrieve for a specific Personal API Token') do |v|
+    options[:personal_api_token] = v
+  end
+
+  opts.on('-p', '--paginate', 'Paginate and retrieve all results') do |v|
+    options[:paginate] = v
+  end
+
+  opts.on('-l', '--limit [LIMIT]', 'Limit for the pagination options') do |v|
+    options[:limit] = v.to_i
+  end
+
+  opts.on('-o', '--offset [OFFSET]', 'Offset for the pagination options') do |v|
+    options[:offset] = v.to_i
+  end
+end.parse!
+
+# Merge with the defaults
+core_options.merge!(options)
+
+# Setup Logging
+log_name       = 'accounts'
+request_logger = Logger.new(File.expand_path('../../log/requests.log', __FILE__))
+app_logger     = Logger.new(File.expand_path('../../log/development.log', __FILE__))
+
+# Setup the Connection
+connection = KISSmetrics::Client::Connection.new(url: ENV.fetch('API_HOST')) do |conn|
+  conn.response(:logger, request_logger)
+  conn.adapter(Faraday.default_adapter)
+end
+
+# Setup HTTP Headers
+connection.headers['Authorization'] = ("Bearer %s" % [core_options.fetch(:personal_api_token)])
+connection.headers['Accept']        = 'application/json'
+
+# Accounts Request
+request_uri      = '/core/accounts'
+accounts_request = connection.get(request_uri)
+app_logger.info(log_name) { ("Making request to %s" % [request_uri]) }
+
+case(accounts_request.status)
+when(200)
+  app_logger.info(log_name) { ("[%s] (%s) %s" % [200, request_uri, 'Success']) }
+
+  accounts_response   = MultiJson.load(accounts_request.body)
+  pagination_response = KISSmetrics::Client::Response::Pagination.new(accounts_response.fetch('pagination', {}))
+  links_response      = KISSmetrics::Client::Response::Links.new(accounts_response.fetch('links', []))
+  data_response       = accounts_response.fetch('data', {})
+
+  all_accounts = []
+  all_accounts.concat(data_response)
+
+  if core_options.fetch(:paginate)
+    progress_bar = ProgressBar.create(progress_bar_options.merge(total: pagination_response.total))
+
+    next_link = links_response.find_by_rel('next')
+
+    if next_link
+      loop do
+        next_link_href = next_link.href
+
+        app_logger.info(log_name) { ("Retrieving paginated set %s" % [next_link_href]) }
+
+        accounts_request = connection.get(next_link_href)
+
+        case(accounts_request.status)
+        when(200)
+          accounts_response   = MultiJson.load(accounts_request.body)
+          pagination_response = KISSmetrics::Client::Response::Pagination.new(accounts_response.fetch('pagination', {}))
+          links_response      = KISSmetrics::Client::Response::Links.new(accounts_response.fetch('links', []))
+          data_response       = accounts_response.fetch('data', [])
+
+          next_link = links_response.find_by_rel('next')
+
+          all_accounts.concat(data_response)
+          progress_bar.increment
+        else
+          app_logger.error(log_name) { ("[%s] (%s) %s" % [accounts_request.status, next_link_href, 'Error with Pagination']) }
+          break
+        end
+
+        break if next_link.nil?
+      end
+      progress_bar.finish
+    else
+      app_logger.info(log_name) { 'No next link available...' }
+    end
+  else
+    app_logger.info(log_name) { 'Pagination disabled, skipping...' }
+  end
+
+  accounts = KISSmetrics::Client::Models::Accounts.new(all_accounts)
+
+  # Prepare the row display
+  row_display = ->(account,index) do
+    [(index+1), account.id, account.name, account.status, account.created_at]
+  end
+
+  link_rows = accounts.each_with_index.map { |record,index| row_display.call(record,index) }
+  title     = "KISSmetrics Accounts (%s of %s)" % [all_accounts.count, pagination_response.total]
+  headings  = ['#', 'ID', 'Name', 'Status', 'Created At']
+
+  table = Terminal::Table.new(headings: headings, title: title, rows: link_rows)
+  puts "\n"
+  puts table
+  puts "\n"
+when(500)
+  app_logger.error(log_name) { ("[%s] (%s) %s" % [500, request_uri, 'Server Error']) }
+when(403)
+  app_logger.error(log_name) { ("[%s] (%s) %s" % [403, request_uri, 'Not Authorized']) }
+when(401)
+  app_logger.error(log_name) { ("[%s] (%s) %s" % [401, request_uri, 'Not Authenticated']) }
+when(400)
+  app_logger.error(log_name) { ("[%s] (%s) %s" % [400, request_uri, 'Bad Request']) }
+else
+  app_logger.error(log_name) { ("[%s] (%s) %s" % ['UNKNOWN', request_uri, 'Unknown']) }
+end
