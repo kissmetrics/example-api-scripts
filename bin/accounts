@@ -65,9 +65,15 @@ end
 connection.headers['Authorization'] = ("Bearer %s" % [core_options.fetch(:personal_api_token)])
 connection.headers['Accept']        = 'application/json'
 
+# Request Query Params
+request_params = {
+  :limit  => core_options.fetch(:limit),
+  :offset => core_options.fetch(:offset)
+}
+
 # Accounts Request
 request_uri      = '/core/accounts'
-accounts_request = connection.get(request_uri)
+accounts_request = connection.get(request_uri, request_params)
 app_logger.info(log_name) { ("Making request to %s" % [request_uri]) }
 
 case(accounts_request.status)
