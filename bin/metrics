@@ -136,7 +136,7 @@ when(200)
 
   link_rows = metrics.sort.each_with_index.map { |record,index| row_display.call(record,index) }
   title     = "KISSmetrics Metrics (%s of %s)" % [all_metrics.count, pagination_response.total]
-  headings  = ['#', 'ID', 'Order', 'Title', 'Status', 'Visible?', 'Config Last Change At']
+  headings  = ['#', 'ID', 'Order', 'Title', 'Status', 'Visible?', 'Config Last Changed At']
 
   table = Terminal::Table.new(headings: headings, title: title, rows: link_rows)
   puts "\n"
