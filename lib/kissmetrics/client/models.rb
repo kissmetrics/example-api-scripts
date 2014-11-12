@@ -14,7 +14,7 @@ require File.expand_path('../models/events', __FILE__)
 
 require File.expand_path('../models/property', __FILE__)
 require File.expand_path('../models/properties', __FILE__)
-p
+
 require File.expand_path('../models/report', __FILE__)
 require File.expand_path('../models/reports', __FILE__)
 
