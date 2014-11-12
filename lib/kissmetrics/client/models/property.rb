@@ -22,6 +22,10 @@ module KISSmetrics
           KISSmetrics::Client::Response::Links.new(@attributes.fetch('links', []))
         end
 
+        def product_id
+          @attributes['product_id']
+        end
+
         def name
           @attributes['name']
         end
