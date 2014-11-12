@@ -18,6 +18,10 @@ module KISSmetrics
           @attributes['id']
         end
 
+        def links
+          KISSmetrics::Client::Response::Links.new(@attributes.fetch('links', []))
+        end
+
         def product_id
           @attributes['product_id']
         end
