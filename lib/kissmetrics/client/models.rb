@@ -6,6 +6,9 @@ require File.expand_path('../models/accounts', __FILE__)
 require File.expand_path('../models/product', __FILE__)
 require File.expand_path('../models/products', __FILE__)
 
+require File.expand_path('../models/metric', __FILE__)
+require File.expand_path('../models/metrics', __FILE__)
+p
 require File.expand_path('../models/report', __FILE__)
 require File.expand_path('../models/reports', __FILE__)
 
