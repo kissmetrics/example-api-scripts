@@ -1,0 +1,82 @@
+#!/usr/bin/env ruby
+
+require 'dotenv'
+Dotenv.load
+
+require File.expand_path('../../lib/kissmetrics', __FILE__)
+require 'multi_json'
+require 'terminal-table'
+require 'logger'
+require 'optparse'
+
+# CLI Options Parser
+core_options = {
+  :personal_api_token => ENV.fetch('PERSONAL_API_TOKEN'),
+}
+
+options = {}
+OptionParser.new do |opts|
+  opts.banner = 'Usage: bundle exec bin/rels [options]'
+
+  opts.on('-t', '--token [TOKEN]', 'Retrieve for a specific Personal API Token') do |v|
+    options[:personal_api_token] = v
+  end
+end.parse!
+
+# Merge with the defaults
+core_options.merge!(options)
+
+# Setup Logging
+log_name       = 'rels'
+request_logger = Logger.new(File.expand_path('../../log/requests.log', __FILE__))
+app_logger     = Logger.new(File.expand_path('../../log/development.log', __FILE__))
+
+# Setup the Connection
+connection = KISSmetrics::Client::Connection.new(url: ENV.fetch('API_HOST')) do |conn|
+  conn.response(:logger, request_logger)
+  conn.adapter(Faraday.default_adapter)
+end
+
+# Setup HTTP Headers
+connection.headers['Authorization'] = ("Bearer %s" % [core_options.fetch(:personal_api_token)])
+connection.headers['Accept']        = 'application/json'
+
+# Link Relationships (rels) Request
+request_uri       = '/core/rels'
+rels_request = connection.get(request_uri)
+app_logger.info(log_name) { ("Making request to %s" % [request_uri]) }
+
+case(rels_request.status)
+when(200)
+  app_logger.info(log_name) { ("[%s] (%s) %s" % [200, request_uri, 'Success']) }
+
+  rels_response  = MultiJson.load(rels_request.body)
+  links_response = KISSmetrics::Client::Response::Links.new(rels_response.fetch('links', []))
+  data_response  = rels_response.fetch('data', {})
+
+  rels = KISSmetrics::Client::Models::Rels.new(data_response)
+
+  # Prepare the row display
+  row_display = ->(rel,index) do
+    [(index+1), rel.name, rel.description]
+  end
+
+  link_rows = rels.rels.each_with_index.map { |record,index| row_display.call(record,index) }
+  title     = ("%s: %s (%s Links)" % [rels.title, rels.description, rels.rels.count])
+  headings  = ['#', 'Name', 'Description']
+
+  table = Terminal::Table.new(headings: headings, title: title, rows: link_rows)
+  puts "\n"
+  puts table
+  puts "\n"
+when(500)
+  app_logger.error(log_name) { ("[%s] (%s) %s" % [500, request_uri, 'Server Error']) }
+when(403)
+  app_logger.error(log_name) { ("[%s] (%s) %s" % [403, request_uri, 'Not Authorized']) }
+when(401)
+  app_logger.error(log_name) { ("[%s] (%s) %s" % [401, request_uri, 'Not Authenticated']) }
+when(400)
+  app_logger.error(log_name) { ("[%s] (%s) %s" % [400, request_uri, 'Bad Request']) }
+else
+  app_logger.error(log_name) { ("[%s] (%s) %s" % ['UNKNOWN', request_uri, 'Unknown']) }
+end
