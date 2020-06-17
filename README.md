@@ -1,5 +1,7 @@
 # KISSmetrics API Example Scripts
 
+Core API is deprecated.  Please refer to the [Kissmetrics Query API](https://support.kissmetrics.io/reference#overview)
+
 ## Getting Started
 
 ```sh
